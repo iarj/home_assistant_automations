@@ -1,0 +1,27 @@
+# Zigbee2MQTT Router Inventory - Home Assistant package
+#
+# Change the three occurrences of "zigbee2mqtt" below if your Zigbee2MQTT
+# instance uses a different MQTT base topic.
+#
+# If you use this file for more than one Zigbee2MQTT instance, each sensor must
+# have a different name and unique_id. See examples/two_z2m_instances.yaml.
+
+mqtt:
+  sensor:
+    - name: Zigbee2MQTT Router Inventory
+      unique_id: zigbee2mqtt_router_inventory
+      icon: mdi:zigbee
+      state_topic: zigbee2mqtt/bridge/devices
+      value_template: >-
+        {{ value_json | selectattr('type', 'eq', 'Router') | list | count }}
+      json_attributes_topic: zigbee2mqtt/bridge/devices
+      json_attributes_template: >-
+        {{
+          {
+            'routers': value_json
+              | selectattr('type', 'eq', 'Router')
+              | map(attribute='friendly_name')
+              | list
+          }
+          | tojson
+        }}
