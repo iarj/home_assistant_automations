@@ -1,0 +1,41 @@
+# Example only: two Zigbee2MQTT instances in the same Home Assistant instance.
+# Put equivalent definitions into your package/YAML structure and use a separate
+# blueprint automation instance for each inventory sensor/base topic pair.
+
+mqtt:
+  sensor:
+    - name: Zigbee2MQTT Main Router Inventory
+      unique_id: zigbee2mqtt_main_router_inventory
+      icon: mdi:zigbee
+      state_topic: zigbee2mqtt/bridge/devices
+      value_template: >-
+        {{ value_json | selectattr('type', 'eq', 'Router') | list | count }}
+      json_attributes_topic: zigbee2mqtt/bridge/devices
+      json_attributes_template: >-
+        {{
+          {
+            'routers': value_json
+              | selectattr('type', 'eq', 'Router')
+              | map(attribute='friendly_name')
+              | list
+          }
+          | tojson
+        }}
+
+    - name: Zigbee2MQTT Secondary Router Inventory
+      unique_id: zigbee2mqtt_secondary_router_inventory
+      icon: mdi:zigbee
+      state_topic: z2m_secondary/bridge/devices
+      value_template: >-
+        {{ value_json | selectattr('type', 'eq', 'Router') | list | count }}
+      json_attributes_topic: z2m_secondary/bridge/devices
+      json_attributes_template: >-
+        {{
+          {
+            'routers': value_json
+              | selectattr('type', 'eq', 'Router')
+              | map(attribute='friendly_name')
+              | list
+          }
+          | tojson
+        }}
