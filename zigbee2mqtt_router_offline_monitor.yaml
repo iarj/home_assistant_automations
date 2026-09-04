@@ -1,0 +1,143 @@
+blueprint:
+  name: Zigbee2MQTT Router Offline Monitor
+  description: >-
+    Monitors every Zigbee2MQTT device currently reported as a Router, plus an
+    optional list of additional Zigbee2MQTT friendly names. When a monitored
+    device is published as offline and does not return online within the
+    configured confirmation period, Home Assistant creates a persistent
+    notification and can run additional user-defined notification actions.
+
+    This blueprint is designed for one Zigbee2MQTT instance. If you run more
+    than one instance, create one inventory sensor and one blueprint automation
+    per Zigbee2MQTT base topic.
+  domain: automation
+  author: iarj
+  source_url: https://github.com/iarj/home_assistant_automations/blob/main/blueprints/automation/iarj/zigbee2mqtt_router_offline_monitor.yaml
+  homeassistant:
+    min_version: "2024.10.0"
+  input:
+    zigbee2mqtt:
+      name: Zigbee2MQTT instance
+      icon: mdi:zigbee
+      input:
+        base_topic:
+          name: Zigbee2MQTT base topic
+          description: >-
+            The MQTT base topic used by this Zigbee2MQTT instance. The default
+            Zigbee2MQTT value is "zigbee2mqtt".
+          default: zigbee2mqtt
+          selector:
+            text:
+        router_inventory_sensor:
+          name: Router inventory sensor
+          description: >-
+            Select the MQTT sensor created from bridge/devices. It must expose
+            a "routers" attribute containing Zigbee2MQTT friendly names.
+          selector:
+            entity:
+              filter:
+                - domain: sensor
+        network_name:
+          name: Network label
+          description: Friendly label used in notifications.
+          default: Zigbee2MQTT
+          selector:
+            text:
+    monitoring:
+      name: Monitoring
+      icon: mdi:lan-disconnect
+      input:
+        additional_devices:
+          name: Additional monitored devices
+          description: >-
+            Optional Zigbee2MQTT friendly names to monitor even when they are
+            not Routers. Enter the names exactly as they appear in Zigbee2MQTT.
+          default: []
+          selector:
+            text:
+              multiple: true
+        confirmation_minutes:
+          name: Offline confirmation time
+          description: >-
+            Number of minutes the device must remain offline after Zigbee2MQTT
+            publishes the offline state before an alert is generated.
+          default: 30
+          selector:
+            number:
+              min: 1
+              max: 1440
+              step: 1
+              unit_of_measurement: min
+              mode: box
+    notifications:
+      name: Notifications
+      icon: mdi:bell-alert
+      input:
+        additional_notification_actions:
+          name: Additional notification actions
+          description: >-
+            Optional actions to run after the built-in Home Assistant persistent
+            notification. For example, add a mobile_app notification here.
+            The variables alert_message, device_name, device_role, network_name,
+            base_topic and availability_topic are available to templates.
+          default: []
+          selector:
+            action:
+
+trigger_variables:
+  z2m_base_topic: !input base_topic
+
+triggers:
+  - trigger: mqtt
+    topic: "{{ z2m_base_topic ~ '/+/availability' }}"
+    payload: offline
+    value_template: "{{ value_json.state }}"
+
+conditions: []
+
+actions:
+  - variables:
+      router_inventory_entity: !input router_inventory_sensor
+      extra_devices: !input additional_devices
+      confirm_minutes: !input confirmation_minutes
+      configured_network_name: !input network_name
+      base_topic: "{{ trigger.topic.split('/')[0] }}"
+      device_name: "{{ trigger.topic.split('/')[1] }}"
+      availability_topic: "{{ trigger.topic }}"
+      is_router: >-
+        {{ device_name in (state_attr(router_inventory_entity, 'routers') or []) }}
+      is_additional: "{{ device_name in extra_devices }}"
+
+  - condition: template
+    value_template: "{{ is_router or is_additional }}"
+
+  - wait_for_trigger:
+      - trigger: mqtt
+        topic: "{{ availability_topic }}"
+        payload: online
+        value_template: "{{ value_json.state }}"
+    timeout:
+      minutes: "{{ confirm_minutes | int }}"
+    continue_on_timeout: true
+
+  - condition: template
+    value_template: "{{ not wait.completed }}"
+
+  - variables:
+      device_role: "{{ 'router' if is_router else 'additional monitored device' }}"
+      network_name: "{{ configured_network_name }}"
+      alert_message: >-
+        {{ device_name }} ({{ device_role }}) has been offline for more than
+        {{ confirm_minutes | int }} minute{{ '' if (confirm_minutes | int) == 1 else 's' }}
+        on {{ configured_network_name }}.
+
+  - action: persistent_notification.create
+    data:
+      title: Zigbee offline alert
+      message: "{{ alert_message }}"
+
+  - alias: Run optional notification actions
+    sequence: !input additional_notification_actions
+
+mode: parallel
+max: 100
